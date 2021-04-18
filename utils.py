@@ -15,7 +15,7 @@ class PrimeGenerator(object):
         prime_candidate = 0
         while (not is_prime) or (not is_special_prime):
             rand_bits = random.getrandbits(self.num_of_bits - 2)
-            prime_candidate = 2 ** (self.num_of_bits - 1) + rand_bits #Assure that the MSB bit is 1. 
+            prime_candidate = 2 ** (self.num_of_bits - 2) + rand_bits #Assure that the MSB bit is 1. 
             is_prime = self._primality_check(prime_candidate)
             is_special_prime = self._primality_check(2 * prime_candidate + 1)
         return (2 * prime_candidate + 1)
