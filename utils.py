@@ -1,12 +1,14 @@
 import random
+import numpy as np
+import os
 
 class PrimeGenerator(object):
 
-    def __init__(self, num_of_bits, certainty):
+    def __init__(self, num_of_bits, confidence):
         ''' generate num_of_bits bits number which is a prime of the form 2*p + 1 with high probability \
-        failure probabilty upper bound exponentialy decreases as certainty increases '''
+        failure probabilty upper bound exponentialy decreases as confidence increases '''
         self.num_of_bits = num_of_bits
-        self.certainty = certainty
+        self.confidence = confidence
 
     def get_prime(self):
         ''' generate the prime '''
@@ -27,7 +29,7 @@ class PrimeGenerator(object):
         while(d % 2 == 0):
             d = int(d / 2)
             r += 1
-        for _ in range(self.certainty):
+        for _ in range(self.confidence):
             witness = random.randint(2, number - 2)
             x = pow(witness, d, number)
             if x == 1 or x == number - 1:
@@ -44,55 +46,93 @@ class PrimeGenerator(object):
 
 class EncryptionScheme(object):
 
-    def __init__(self, security_param=256, prime_certainty=40, max_message=128): #ASCII table contains 128 chars
-        self.p = PrimeGenerator(security_param, prime_certainty).get_prime()
+    def __init__(self):
+        self.p = None
+        self.q = None
+        self.g = None
+        self.public_key = None
+        self.secret_key = None
+        self.lookup_dict = None
+
+    def generate(self, security_param=256, prime_confidence=40, max_message=128): #ASCII table contains 128 chars
+        self.p = PrimeGenerator(security_param, prime_confidence).get_prime()
         self.q = self.p - 1 # |G| = q
         self.g = 1
         while pow(self.g, 2, self.p) == 1: #Sufficient condition since p is of the form p = 2q + 1
             self.g = random.randint(2, self.q - 1)
-        self.public_key = None
-        self.secret_key = None
         self.lookup_dict = {}
         group_element = 1
         for exp in range(max_message):
             self.lookup_dict[group_element] = exp
             group_element = (group_element * self.g) % self.p
 
-    #TODO: Add a method for saving/loading the scheme to/from a file (with and without the secret key)
-    #TODO: Encoding and decoding a string to/from array of ASCII codes
-    #TODO: Generalize the above for multiple messages.. How to seperate messages?
-    #TODO: performance checks
-        
     def gen_keys(self):
         x = random.randint(1, self.q - 1)
         self.public_key = pow(self.g, x, self.p)
         self.secret_key = x
 
-    def encrypt_message(self, message):
-        y = random.randint(1, self.q - 1)
-        encryptor = pow(self.g, y, self.p)
-        powered_message = pow(self.g, message, self.p)
-        powered_key = pow(self.public_key, y, self.p) 
-        return encryptor,  (powered_message * powered_key) % self.p
+    def to_file(self, file_path, include_secret_key=False):
+        ''' Save the scheme to a compressed npz file '''
+        values = np.array([self.p, self.q, self.g, self.public_key])
+        if include_secret_key:
+            values = np.array([self.p, self.q, self.g, self.public_key, self.secret_key])
+        lookup_arr = np.array(list(self.lookup_dict.items()))
+        np.savez(file_path, values=values, lookup_arr=lookup_arr)
 
-    def decrypt_message(self, ciphertext):
-        encryptor = ciphertext[0]
-        encrypted_message = ciphertext[1]
-        powered_message = (encrypted_message * pow(encryptor, self.q - self.secret_key, self.p)) % self.p
-        return self.lookup_dict[powered_message]
+    def from_file(self, file_path):
+        ''' Load the scheme from a compressed npz file '''
+        with np.load(file_path) as scheme_data:
+            values = scheme_data['values']
+            try: # assume secret key included
+                self.p, self.q, self.g, self.public_key, self.secret_key = tuple(values)
+                self.secret_key = int(self.secret_key)
+            except:
+                self.p, self.q, self.g, self.public_key = tuple(values)
+            self.p = int(self.p)
+            self.q = int(self.q)
+            self.g = int(self.g)
+            self.public_key = int(self.public_key)
+            lookup_arr = scheme_data['lookup_arr']
+            self.lookup_dict = {int(key) : int(value) for [key, value] in lookup_arr}
 
+    #TODO: Add support for very large ints
+    #TODO: performance checks
+        
+    def encode_message(self, message):
+        ''' Outputs ASCII codes of message chars'''
+        return np.array([ord(char) for char in message], dtype=int)
 
-# Some testing :)
-scheme = EncryptionScheme(security_param=10)
-scheme.gen_keys()
-print(scheme.p)
-print(scheme.g)
-print(scheme.secret_key)
-print(scheme.public_key)
-print(len(scheme.lookup_dict))
-message = 123
-cipher = scheme.encrypt_message(message)
-print("Original message: " + str(message) + " >> Ciphertext: " + str(cipher) + " >> Decrypted plaintext: " + str(scheme.decrypt_message(cipher)))
+    def decode_message(self, encoded_message):
+        ''' Outputs decoded message from ASCII array'''
+        return ''.join(chr(code) for code in encoded_message)
+
+    def _encrypt_single_code(self, code):
+        ''' Encrypts single ASCII code plaintext '''
+        y = random.randint(1, self.q - 1) # y <- {1,...,q-1}
+        encryptor = pow(self.g, y, self.p) # g^y mod p
+        powered_message = pow(self.g, int(code), self.p) # g^m mod p
+        powered_key = pow(self.public_key, y, self.p) # h^y mod p
+        ciphertext = [encryptor, (powered_message * powered_key) % self.p] # (g^y mod p, (g^m * h^y) mod p)
+        return ciphertext
+
+    def encrypt_encoded_message(self, encoded_message_vector):
+        ''' Outputs the encryption of a whole encoded message '''
+        ciphertext_vector = np.array([self._encrypt_single_code(code) for code in encoded_message_vector])            
+        return ciphertext_vector
+
+    def _decrypt_single_ciphertext(self, ciphertext):
+        ''' Decrypts single ciphertext pair (.,.) to its corresponding ASCII code'''
+        if self.secret_key is None:
+            raise('Error: secret key was not found.')
+        encryptor = int(ciphertext[0]) # g^y mod p
+        encrypted_message = ciphertext[1] # (g^m * h^y) mod p
+        powered_message = (encrypted_message * pow(encryptor, self.q - self.secret_key, self.p)) % self.p # g^m = ((g^m * h^y) mod p / g^y mod p) mod p
+        return self.lookup_dict[powered_message] # g^m -> m
+
+    def decrypt_to_encoded_message(self, ciphertext_vector):
+        ''' Decrypts a whole ciphertext to the encoded plaintext'''
+        encoded_plaintext_vector = np.array([self._decrypt_single_ciphertext(ciphertext) for ciphertext in ciphertext_vector])
+        return encoded_plaintext_vector
 
         
       
