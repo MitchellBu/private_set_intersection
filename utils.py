@@ -1,6 +1,8 @@
 import random
 import numpy as np
 import os
+import small_primes
+import datetime
 
 
 class MathUtils(object):
@@ -8,23 +10,25 @@ class MathUtils(object):
     def _extended_gcd(self, num1, num2):
         ''' Euclidean algorithm implementation '''
         gcd, scalar_1, scalar_2 = 0, 0, 0
-        a = np.array([1, 0], dtype=int)
-        b = np.array([0, 1], dtype=int)
+        a_0, a_1 = 1, 0
+        b_0, b_1 = 0, 1
         while (num2 and num1):
             if num2 > num1:
                 x = num2 // num1
                 y = num2 % num1
                 num2 = y
-                b -= x*a
+                b_0 -= x*a_0
+                b_1 -= x*a_1
             else:
                 x = num1 // num2
                 y = num1 % num2
                 num1 = y
-                a -= x*b
+                a_0 -= x*b_0
+                a_1 -= x*b_1
         if num1 == 0:
-            gcd,scalar_1, scalar_2 = num2, b[0], b[1]
+            gcd,scalar_1, scalar_2 = num2, b_0, b_1
         else:
-            gcd, scalar_1, scalar_2 = num1, a[0], a[1]
+            gcd, scalar_1, scalar_2 = num1, a_0, a_1
         return gcd, scalar_1, scalar_2
 
     def gcd(self, num1, num2):
@@ -48,17 +52,25 @@ class PrimeGenerator(object):
         is_prime = False
         prime_candidate = 0
         while not is_prime:
-            rand_bits = random.getrandbits(self.num_of_bits - 1)
-            prime_candidate = 2 ** (self.num_of_bits - 1) + rand_bits #Assure that the MSB bit is 1. 
-            is_prime = self._primality_check(prime_candidate)
+            rand_bits = random.getrandbits(self.num_of_bits - 2)
+            prime_candidate = 2 ** (self.num_of_bits - 2) + rand_bits 
+            prime_candidate = prime_candidate * 2 + 1 #Assure that the MSB & LSB bits are both 1. 
+            is_prime = (self._trivial_check(prime_candidate) and self._primality_check(prime_candidate))
         return prime_candidate
+
+    def _trivial_check(self, number):
+        ''' Check that the number does not divide by any small prime '''
+        for p in small_primes.primes:
+            if number % p == 0:
+                return False
+        return True
             
     def _primality_check(self, number):
         ''' Miller-Rabin primality test implementation '''
         d = number - 1 # factorize number as n = (2^r)*d + 1
         r = 0
         while(d % 2 == 0):
-            d = int(d / 2)
+            d = d//2
             r += 1
         for _ in range(self.confidence):
             witness = random.randint(2, number - 2)
@@ -67,7 +79,7 @@ class PrimeGenerator(object):
                 continue
             passed_test = False
             for _ in range(r - 1):
-                x = (x ** 2) % number
+                x = pow(x, 2, number)
                 if x == number - 1:
                     passed_test = True
                     break
@@ -100,15 +112,13 @@ class Ciphertext(object):
 
 class EncryptionScheme(object):
 
-    #TODO: Research and implement huge ints handling
-
     def __init__(self):
         self.p = None
         self.q = None
         self.public_key = None # N = pq
         self.secret_key = None # phi(N) = (p-1)(q-1)
 
-    def generate(self, security_param=256, prime_confidence=10):
+    def generate(self, security_param=2048, prime_confidence=100):
         self.p = PrimeGenerator(security_param, prime_confidence).get_prime()
         self.q = PrimeGenerator(security_param, prime_confidence).get_prime()
         self.public_key = self.p * self.q
@@ -157,7 +167,7 @@ class EncryptionScheme(object):
             raise('Error: secret key was not found.')
         cipher = ciphertext.ciphertext
         c_hat = pow(cipher, self.secret_key, N_squared) # c^phi(N) mod N^2
-        m_hat = int((c_hat - 1) / N)
+        m_hat = (c_hat - 1) // N
         return (m_hat * MathUtils().inverse(self.secret_key, N_squared)) % N    
         
     def encode_message(self, message):
@@ -178,20 +188,22 @@ class EncryptionScheme(object):
         encoded_plaintext_vector = np.array([self.decrypt_single_ciphertext(ciphertext) for ciphertext in ciphertext_vector])
         return encoded_plaintext_vector
 
-        
+t1 = datetime.datetime.now()
 scheme = EncryptionScheme()
-scheme.generate(security_param=10)
-print("Scheme info: p: " + str(scheme.p) + ", q: " + str(scheme.q) + ", N: " + str(scheme.public_key) + ", phi: " + str(scheme.secret_key))
-message_1 = 100
+scheme.generate()
+t2 = datetime.datetime.now()
+print("Scheme info: security parameter is " + str(scheme.p.bit_length()) + " bit. Generation took " + str(t2 - t1))
+print("p: " + str(scheme.p) + "\nq: " + str(scheme.q) + "\nN: " + str(scheme.public_key) + "\nphi: " + str(scheme.secret_key) + "\n")
+message_1 = 40
 cipher_1 = scheme.encrypt_single_message(message_1)
-message_2 = 200
+message_2 = 60
 cipher_2 = scheme.encrypt_single_message(message_2)
 cipher = cipher_1 + cipher_2 # Demonstration of additive homomorphic property! 
 restored_plain = scheme.decrypt_single_ciphertext(cipher)
-print("Original message: " + str(message_1 + message_2) + ", ciphertext: " + str(cipher) + ", restored plaintext: " + str(restored_plain))
-message_3 = 111
+print("Original message: " + str(message_1 + message_2) + "\nciphertext: " + str(cipher) + "\nrestored plaintext: " + str(restored_plain) + "\n")
+message_3 = 100
 cipher_3 = scheme.encrypt_single_message(message_3)
-scalar = 3
-cipher_3_mul = cipher_3 * scalar # Demonstration of scalar multiplication property!
+scalar = 5
+cipher_3_mul = cipher_3 * scalar # Demonstration of scalar multiplication homomorphic property!
 res_3 = scheme.decrypt_single_ciphertext(cipher_3_mul)
-print("Original message: " + str(message_3 * scalar) + ", ciphertext: " + str(cipher_3_mul) + ", restored plaintext: " + str(res_3))
+print("Original message: " + str(message_3 * scalar) + "\nciphertext: " + str(cipher_3_mul) + "\nrestored plaintext: " + str(res_3))
