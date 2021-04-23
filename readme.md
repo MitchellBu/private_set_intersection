@@ -10,5 +10,5 @@ B{Small primes check} --Fail--> A
 B -- Pass --> C{Miller-Rabin}
 C -- _confidence_ times --> C
 C -- Fail --> A
-C -- Pass --> D(Return prime)
+C -- Pass --> D(Return prime)```
 
