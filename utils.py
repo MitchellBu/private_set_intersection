@@ -126,22 +126,25 @@ class EncryptionScheme(object):
 
     def to_file(self, file_path, include_secret_key=False):
         ''' Save the scheme to a .npy file '''
-        values = np.array([self.public_key])
+        if not file_path.endswith('.npy'):
+            raise('Error: file extension has to be ".npy"')
+        values = np.array([self.public_key], dtype=object)
         if include_secret_key:
-            values = np.array([self.p, self.q, self.public_key, self.secret_key])
-        np.save(file_path, values)
+            values = np.array([self.p, self.q, self.public_key, self.secret_key], dtype=object)
+        np.save(file_path, values, allow_pickle=True)
 
     def from_file(self, file_path):
         ''' Load the scheme from a .npy file '''
-        with np.load(file_path) as scheme_data:
-            try: # assume secret key included
-                self.p, self.q, self.public_key, self.secret_key = tuple(scheme_data)
-                self.p = int(self.p)
-                self.q = int(self.q)
-                self.secret_key = int(self.secret_key)
-            except:
-                self.public_key = scheme_data[0]
-            self.public_key = int(self.public_key)
+        if not file_path.endswith('.npy'):
+            raise('Error: file extension has to be ".npy"')
+        try:
+            scheme_data = np.load(file_path, allow_pickle=True)
+        except:
+            raise('Error: failed to open the scheme file.')
+        try: # assume secret key included
+            self.p, self.q, self.public_key, self.secret_key = tuple(scheme_data)
+        except:
+            self.public_key = scheme_data[0]
 
     def encrypt_single_message(self, plaintext):
         ''' Encrypts single numeric plaintext '''
