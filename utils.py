@@ -4,6 +4,7 @@ import os
 import small_primes
 import datetime
 
+from cmath import exp, pi
 
 class MathUtils(object):
 
@@ -38,6 +39,59 @@ class MathUtils(object):
     def inverse(self, num, modulo):
         ''' Find the modular inverse of num '''
         return ((self._extended_gcd(num, modulo))[1] % modulo)
+
+    #
+    def _fast_DFT(self, sequence):
+        ''' compute the discrete fourier transform of the given sequence '''
+        # Works only for a len=2^x. Add ripud.
+        N = len(sequence)
+        T = exp(-2*pi*1j/N)
+        if N > 1:
+            sequence = self._fast_DFT(self, sequence[::2]) + self._fast_DFT(self, sequence[1::2])
+            for k in range(int(N/2)):
+                sequence_k = sequence[int(k)]
+                sequence[int(k)] = sequence_k + T**k*sequence[int(k+N/2)]
+                sequence[int(k+N/2)] = sequence_k - T**k*sequence[int(k+N/2)]
+        return sequence
+
+
+    def _fast_inverse_DFT(self, sequence):
+        ''' compute the inverse discrete fourier transform of the given sequence '''
+        N = len(sequence)
+        T = exp(2*pi*1j/N)
+        if N > 1:
+            sequence = self._fast_inverse_DFT(self, sequence[::2]) + self._fast_inverse_DFT(self, sequence[1::2])
+            for k in range(int(N/2)):
+                sequence_k = sequence[int(k)] / 2
+                sequence[int(k)] = sequence_k + T**k*sequence[int(k+N/2)]
+                sequence[int(k+N/2)] = sequence_k - T**k*sequence[int(k+N/2)]
+        return sequence
+
+    def _fast_polynomials_multiplication(self, poly_1, poly_2):
+        ''' compute the coefficients of the product of the given polynomials ''' 
+        poly_1_FFT = self._fast_DFT(self, poly_1)
+        poly_2_FFT = self._fast_DFT(self, poly_2)
+        mul_FFT = [None] * len(poly_1_FFT)
+        for i in range(len(poly_1_FFT)):
+            mul_FFT[i] = poly_1_FFT[i]*poly_2_FFT[i]
+        mul = self._fast_inverse_DFT(self, mul_FFT)
+        return mul
+
+    def polynomial_coefficients_from_roots(self, roots):
+        ''' compute the coefficients of the monic polynomial that has the specified roots '''
+        N=len(roots)
+        print(len(roots))
+        if N == 1:
+            return ([1, roots[0]])
+        roots1 = roots[0:int(N/2)]
+        print(len(roots1))
+        roots2 = roots[int(N/2):N]
+        print(len(roots2))
+        return self._fast_polynomials_multiplication(self, self.polynomial_coefficients_from_roots(self, roots1), self.polynomial_coefficients_from_roots(self, roots2))
+    
+
+    
+    
 
 class PrimeGenerator(object):
 
@@ -190,6 +244,20 @@ class EncryptionScheme(object):
         ''' Decrypts a whole ciphertext to the encoded plaintext'''
         encoded_plaintext_vector = np.array([self.decrypt_single_ciphertext(ciphertext) for ciphertext in ciphertext_vector])
         return encoded_plaintext_vector
+
+
+mu = MathUtils
+
+
+
+arr = [1, 2, 3, 4, 5, 6, 7, 8]
+
+
+a = MathUtils.polynomial_coefficients_from_roots(mu, arr)
+
+print( ' '.join("%5.3f" % abs(f) 
+            for f in a) )
+
 
 t1 = datetime.datetime.now()
 scheme = EncryptionScheme()
