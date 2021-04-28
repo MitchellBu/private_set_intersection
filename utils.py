@@ -90,7 +90,8 @@ class MathUtils(object):
         N=len(roots)
         print(len(roots))
         if N == 1:
-            return ([1, roots[0]]) # Flip order and apply negate roots[0]. Read the first bolded comment in my E-Mail!!!! Return .np array instead! will fix many problems...
+            # return np.array([...]) # WILL FIX MANY PROBLEMS
+            return ([1, roots[0]]) # Flip order and negate roots[0]. Read the first bolded comment in my E-Mail!!!!
         roots1 = roots[0:int(N/2)] # Replace int(N/2) with N//2
         print(len(roots1))
         roots2 = roots[int(N/2):N] # Here also
