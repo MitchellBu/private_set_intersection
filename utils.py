@@ -44,9 +44,9 @@ class MathUtils(object):
         ''' get the next power of 2 of a number '''
         if num == 0:
             return 1
-        if num & (num - 1): # Check if the number is already a power of 2
+        if num == 2 ** (num.bit_length() - 1):
             return num
-        return 2 ** (num.bit_length() + 1)
+        return 2 ** num.bit_length()
 
     def _pad_array(self, array, padding_size):
         ''' pad array with padding_size zeros '''
@@ -57,22 +57,24 @@ class MathUtils(object):
         padding_start_index = (np.nonzero(array)[0])[-1] + 1
         return array[:padding_start_index]
         
-    def _fast_DFT(self, sequence, w_n=exp(2*pi*1j/N)):
+    def _fast_DFT(self, sequence, w_n=None):
         ''' compute the discrete fourier transform of the given sequence '''
-        N = sequence.size
-        if N == 1:
+        if sequence.size == 1:
             return sequence
-        padding_size = self._next_power_of_two(N) - N
+        padding_size = self._next_power_of_two(sequence.size) - sequence.size
         sequence = self._pad_array(sequence, padding_size)
         w = 1
-        transform = np.zeros(N)
-        even_transform = self._fast_DFT(self, sequence[::2])
-        odd_transform = self._fast_DFT(self, sequence[1::2])
+        N = sequence.size
+        if w_n is None:
+            w_n = exp(2*pi*1j/N)
+        transform = np.zeros(N, dtype=np.cdouble)
+        even_transform = self._fast_DFT(sequence[::2])
+        odd_transform = self._fast_DFT(sequence[1::2])
         for k in range(N // 2):
             transform[k] = even_transform[k] + w * odd_transform[k]
             transform[k + N//2] = even_transform[k] - w * odd_transform[k]
             w *= w_n
-        return sequence
+        return transform
 
     def _fast_inverse_DFT(self, sequence):
         ''' compute the inverse discrete fourier transform of the given sequence '''
@@ -81,12 +83,15 @@ class MathUtils(object):
 
     def _fast_polynomials_multiplication(self, poly_1, poly_2):
         ''' compute the coefficients of the product of the given polynomials '''
-        poly_1 = self._pad_array(poly_1, poly_1.size - 1)
-        poly_1_FFT = self._fast_DFT(self, poly_1)
-        poly_2 = self._pad_array(poly_2, poly_2.size - 1)
-        poly_2_FFT = self._fast_DFT(self, poly_2)
+        max_poly_size = max([poly_1.size, poly_2.size])
+        poly_1 = self._pad_array(poly_1, 2 * max_poly_size - poly_1.size - 1)
+        poly_1_FFT = self._fast_DFT(poly_1)
+        poly_2 = self._pad_array(poly_2, 2 * max_poly_size - poly_2.size - 1)
+        poly_2_FFT = self._fast_DFT(poly_2)
         mul_FFT = poly_1_FFT * poly_2_FFT
-        mul = self._fast_inverse_DFT(self, mul_FFT)
+        mul = self._fast_inverse_DFT(mul_FFT)
+        mul = np.real(mul) # Get the real part of mul array
+        mul = np.rint(mul).astype(int) # Integer rounding
         return self._remove_padding(mul)
 
     def polynomial_coefficients_from_roots(self, roots):
@@ -98,7 +103,7 @@ class MathUtils(object):
         poly_1 = self.polynomial_coefficients_from_roots(first_roots)
         last_roots = roots[N//2:N]
         poly_2 = self.polynomial_coefficients_from_roots(last_roots)
-        return self._fast_polynomial_multiplication(poly_1, poly_2)
+        return self._fast_polynomials_multiplication(poly_1, poly_2)
 
 class PrimeGenerator(object):
 
@@ -253,6 +258,10 @@ class EncryptionScheme(object):
         return encoded_plaintext_vector
 
 
+mu = MathUtils()
+print(mu.polynomial_coefficients_from_roots(np.array([1,2,3])))
+
+'''
 t1 = datetime.datetime.now()
 scheme = EncryptionScheme()
 scheme.generate()
@@ -272,3 +281,4 @@ scalar = 5
 cipher_3_mul = cipher_3 * scalar # Demonstration of scalar multiplication homomorphic property!
 res_3 = scheme.decrypt_single_ciphertext(cipher_3_mul)
 print("Original message: " + str(message_3 * scalar) + "\nciphertext: " + str(cipher_3_mul) + "\nrestored plaintext: " + str(res_3))
+'''
