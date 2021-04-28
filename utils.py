@@ -39,68 +39,66 @@ class MathUtils(object):
     def inverse(self, num, modulo):
         ''' Find the modular inverse of num '''
         return ((self._extended_gcd(num, modulo))[1] % modulo)
+    
+    def _next_power_of_two(self, num):
+        ''' get the next power of 2 of a number '''
+        if num == 0:
+            return 1
+        if num & (num - 1): # Check if the number is already a power of 2
+            return num
+        return 2 ** (num.bit_length() + 1)
 
-    #
-    def _fast_DFT(self, sequence):
+    def _pad_array(self, array, padding_size):
+        ''' pad array with padding_size zeros '''
+        return np.append(array, np.zeros(padding_size))
+    
+    def _remove_padding(self, array):
+        ''' remove zero padding from the end of the array '''
+        padding_start_index = (np.nonzero(array)[0])[-1] + 1
+        return array[:padding_start_index]
+        
+    def _fast_DFT(self, sequence, w_n=exp(2*pi*1j/N)):
         ''' compute the discrete fourier transform of the given sequence '''
-        # Works only for a len=2^x. Add ripud. [PADDING]
-        N = len(sequence)
-        T = exp(-2*pi*1j/N) #Delete negation
-        if N > 1:
-            sequence = self._fast_DFT(self, sequence[::2]) + self._fast_DFT(self, sequence[1::2]) # DA FUCK?
-            # even_transform = ...
-            # odd_transform = ...
-            for k in range(int(N/2)): # N//2
-                sequence_k = sequence[int(k)] # DA FUCK 2?
-                # odd_term = (T ** k) * odd_transform[k]
-                sequence[int(k)] = sequence_k + T**k*sequence[int(k+N/2)] # sequence[k] = even_transform[k] + odd_term
-                sequence[int(k+N/2)] = sequence_k - T**k*sequence[int(k+N/2)] # sequence[k] = even_transform[k] - odd_term
-                # You repeatdly compute T ** k each iteration.
-                # Lecture notes implementation is way faster.
+        N = sequence.size
+        if N == 1:
+            return sequence
+        padding_size = self._next_power_of_two(N) - N
+        sequence = self._pad_array(sequence, padding_size)
+        w = 1
+        transform = np.zeros(N)
+        even_transform = self._fast_DFT(self, sequence[::2])
+        odd_transform = self._fast_DFT(self, sequence[1::2])
+        for k in range(N // 2):
+            transform[k] = even_transform[k] + w * odd_transform[k]
+            transform[k + N//2] = even_transform[k] - w * odd_transform[k]
+            w *= w_n
         return sequence
 
-
-    def _fast_inverse_DFT(self, sequence): #REUSEABILITY!!!! READ LAST SLIDE IN LECTURE NOTES !!!!!!
+    def _fast_inverse_DFT(self, sequence):
         ''' compute the inverse discrete fourier transform of the given sequence '''
-        N = len(sequence)
-        T = exp(2*pi*1j/N)
-        if N > 1:
-            sequence = self._fast_inverse_DFT(self, sequence[::2]) + self._fast_inverse_DFT(self, sequence[1::2])
-            for k in range(int(N/2)): 
-                sequence_k = sequence[int(k)] / 2
-                sequence[int(k)] = sequence_k + T**k*sequence[int(k+N/2)]
-                sequence[int(k+N/2)] = sequence_k - T**k*sequence[int(k+N/2)]
-        return sequence
+        N = sequence.size
+        return self._fast_DFT(sequence / N, w_n=exp(-2*pi*1j/N))
 
     def _fast_polynomials_multiplication(self, poly_1, poly_2):
         ''' compute the coefficients of the product of the given polynomials '''
-        # You missed the whole padding part
-        # DO NOT add the extra padding part (to the next power of 2) here, since you'll implement it in _fast_DFT
+        poly_1 = self._pad_array(poly_1, poly_1.size - 1)
         poly_1_FFT = self._fast_DFT(self, poly_1)
+        poly_2 = self._pad_array(poly_2, poly_2.size - 1)
         poly_2_FFT = self._fast_DFT(self, poly_2)
-        mul_FFT = [None] * len(poly_1_FFT) # Make sure that _fast_DFT returns np array and replace with mul_FFT = poly_1_FFT * poly_2_FFT.
-        for i in range(len(poly_1_FFT)): # No need for this loop if the above is done properly.
-            mul_FFT[i] = poly_1_FFT[i]*poly_2_FFT[i]
+        mul_FFT = poly_1_FFT * poly_2_FFT
         mul = self._fast_inverse_DFT(self, mul_FFT)
-        # Make sure that all the 0 coefficients at the end are ignored...
-        return mul
+        return self._remove_padding(mul)
 
     def polynomial_coefficients_from_roots(self, roots):
         ''' compute the coefficients of the monic polynomial that has the specified roots '''
-        N=len(roots)
-        print(len(roots))
+        N = roots.size
         if N == 1:
-            # return np.array([...]) # WILL FIX MANY PROBLEMS
-            return ([1, roots[0]]) # Flip order and negate roots[0]. Read the first bolded comment in my E-Mail!!!!
-        roots1 = roots[0:int(N/2)] # Replace int(N/2) with N//2
-        print(len(roots1))
-        roots2 = roots[int(N/2):N] # Here also
-        print(len(roots2))
-        return self._fast_polynomials_multiplication(self, self.polynomial_coefficients_from_roots(self, roots1), self.polynomial_coefficients_from_roots(self, roots2))
-        # The line above is way too big - split it!
-        # poly_1 = ...
-    
-    
+            return np.array([-roots[0], 1])
+        first_roots = roots[0:N//2]
+        poly_1 = self.polynomial_coefficients_from_roots(first_roots)
+        last_roots = roots[N//2:N]
+        poly_2 = self.polynomial_coefficients_from_roots(last_roots)
+        return self._fast_polynomial_multiplication(poly_1, poly_2)
 
 class PrimeGenerator(object):
 
@@ -253,19 +251,6 @@ class EncryptionScheme(object):
         ''' Decrypts a whole ciphertext to the encoded plaintext'''
         encoded_plaintext_vector = np.array([self.decrypt_single_ciphertext(ciphertext) for ciphertext in ciphertext_vector])
         return encoded_plaintext_vector
-
-
-mu = MathUtils
-
-
-
-arr = [1, 2, 3, 4, 5, 6, 7, 8]
-
-
-a = MathUtils.polynomial_coefficients_from_roots(mu, arr)
-
-print( ' '.join("%5.3f" % abs(f) 
-            for f in a) )
 
 
 t1 = datetime.datetime.now()
