@@ -60,16 +60,16 @@ class MathUtils(object):
     def _fast_DFT(self, sequence, w_n=None):
         ''' compute the discrete fourier transform of the given sequence '''
         if sequence.size == 1:
-            return sequence
+            return np.array([sequence[0]], dtype=np.cdouble)
         padding_size = self._next_power_of_two(sequence.size) - sequence.size
         sequence = self._pad_array(sequence, padding_size)
         w = 1
         N = sequence.size
         if w_n is None:
-            w_n = exp(2*pi*1j/N)
+            w_n = exp(2j*pi/N)
         transform = np.zeros(N, dtype=np.cdouble)
-        even_transform = self._fast_DFT(sequence[::2])
-        odd_transform = self._fast_DFT(sequence[1::2])
+        even_transform = self._fast_DFT(sequence[::2], w_n=w_n**2)
+        odd_transform = self._fast_DFT(sequence[1::2], w_n=w_n**2)
         for k in range(N // 2):
             transform[k] = even_transform[k] + w * odd_transform[k]
             transform[k + N//2] = even_transform[k] - w * odd_transform[k]
@@ -79,15 +79,14 @@ class MathUtils(object):
     def _fast_inverse_DFT(self, sequence):
         ''' compute the inverse discrete fourier transform of the given sequence '''
         N = sequence.size
-        return self._fast_DFT(sequence / N, w_n=exp(-2*pi*1j/N))
+        return self._fast_DFT(sequence, w_n=exp(-2j*pi/N)) / N
 
     def _fast_polynomials_multiplication(self, poly_1, poly_2):
         ''' compute the coefficients of the product of the given polynomials '''
-        max_poly_size = max([poly_1.size, poly_2.size])
-        poly_1 = self._pad_array(poly_1, 2 * max_poly_size - poly_1.size - 1)
-        poly_1_FFT = self._fast_DFT(poly_1)
-        poly_2 = self._pad_array(poly_2, 2 * max_poly_size - poly_2.size - 1)
-        poly_2_FFT = self._fast_DFT(poly_2)
+        poly_1_padded = self._pad_array(poly_1, poly_2.size - 1)
+        poly_1_FFT = self._fast_DFT(poly_1_padded)
+        poly_2_padded = self._pad_array(poly_2, poly_1.size - 1)
+        poly_2_FFT = self._fast_DFT(poly_2_padded)
         mul_FFT = poly_1_FFT * poly_2_FFT
         mul = self._fast_inverse_DFT(mul_FFT)
         mul = np.real(mul) # Get the real part of mul array
@@ -121,10 +120,10 @@ class PrimeGenerator(object):
             rand_bits = random.getrandbits(self.num_of_bits - 2)
             prime_candidate = 2 ** (self.num_of_bits - 2) + rand_bits 
             prime_candidate = prime_candidate * 2 + 1 #Assure that the MSB & LSB bits are both 1. 
-            is_prime = (self._trivial_check(prime_candidate) and self._primality_check(prime_candidate))
+            is_prime = (self._prime_sieving(prime_candidate) and self._primality_check(prime_candidate))
         return prime_candidate
 
-    def _trivial_check(self, number):
+    def _prime_sieving(self, number):
         ''' Check that the number does not divide by any small prime '''
         for p in small_primes.primes:
             if number % p == 0:
@@ -259,9 +258,8 @@ class EncryptionScheme(object):
 
 
 mu = MathUtils()
-print(mu.polynomial_coefficients_from_roots(np.array([1,2,3])))
+print(mu.polynomial_coefficients_from_roots(np.array([2,2,1])))
 
-'''
 t1 = datetime.datetime.now()
 scheme = EncryptionScheme()
 scheme.generate()
@@ -281,4 +279,3 @@ scalar = 5
 cipher_3_mul = cipher_3 * scalar # Demonstration of scalar multiplication homomorphic property!
 res_3 = scheme.decrypt_single_ciphertext(cipher_3_mul)
 print("Original message: " + str(message_3 * scalar) + "\nciphertext: " + str(cipher_3_mul) + "\nrestored plaintext: " + str(res_3))
-'''
