@@ -31,6 +31,7 @@ class Alice(object):
         if not os.path.isfile(ciphers_path):
             raise("Error: bob's file was not found")
         raw_ciphertexts = np.load(ciphers_path, allow_pickle=True)
-        ciphertexts = np.array([Ciphertext(raw_cipher, self.encryption_scheme.public_key) for raw_cipher in raw_ciphertexts])
+        ciphertexts = np.array([Ciphertext(int(raw_cipher), self.encryption_scheme.public_key) for raw_cipher in raw_ciphertexts])
         decryptions = self.encryption_scheme.decrypt_to_encoded_message(ciphertexts)
+        print('Alice sees from Bob: ' + str(decryptions))
         return np.intersect1d(self.messages, decryptions)

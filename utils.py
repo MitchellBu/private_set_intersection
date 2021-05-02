@@ -255,28 +255,3 @@ class EncryptionScheme(object):
         ''' Decrypts a whole ciphertext to the encoded plaintext'''
         encoded_plaintext_vector = np.array([self.decrypt_single_ciphertext(ciphertext) for ciphertext in ciphertext_vector])
         return encoded_plaintext_vector
-
-if __name__ == '__main__':
-    
-    mu = MathUtils()
-    print(mu.polynomial_coefficients_from_roots(np.array([2,2,1])))
-
-    t1 = datetime.datetime.now()
-    scheme = EncryptionScheme()
-    scheme.generate()
-    t2 = datetime.datetime.now()
-    print("Scheme info: security parameter is " + str(scheme.p.bit_length()) + " bit. Generation took " + str(t2 - t1))
-    print("p: " + str(scheme.p) + "\nq: " + str(scheme.q) + "\nN: " + str(scheme.public_key) + "\nphi: " + str(scheme.secret_key) + "\n")
-    message_1 = 40
-    cipher_1 = scheme.encrypt_single_message(message_1)
-    message_2 = 60
-    cipher_2 = scheme.encrypt_single_message(message_2)
-    cipher = cipher_1 + cipher_2 # Demonstration of additive homomorphic property! 
-    restored_plain = scheme.decrypt_single_ciphertext(cipher)
-    print("Original message: " + str(message_1 + message_2) + "\nciphertext: " + str(cipher) + "\nrestored plaintext: " + str(restored_plain) + "\n")
-    message_3 = 100
-    cipher_3 = scheme.encrypt_single_message(message_3)
-    scalar = 5
-    cipher_3_mul = cipher_3 * scalar # Demonstration of scalar multiplication homomorphic property!
-    res_3 = scheme.decrypt_single_ciphertext(cipher_3_mul)
-    print("Original message: " + str(message_3 * scalar) + "\nciphertext: " + str(cipher_3_mul) + "\nrestored plaintext: " + str(res_3))
