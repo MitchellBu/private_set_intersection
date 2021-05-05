@@ -3,13 +3,16 @@ import numpy as np
 import os
 import small_primes
 import datetime
-
+import tqdm
+from multiprocessing import Pool
+import datetime
+ 
 from cmath import exp, pi
 
-class MathUtils(object):
+class MathUtils:
 
     def _extended_gcd(self, num1, num2):
-        ''' Euclidean algorithm implementation '''
+        """ Euclidean algorithm implementation """
         gcd, scalar_1, scalar_2 = 0, 0, 0
         a_0, a_1 = 1, 0
         b_0, b_1 = 0, 1
@@ -33,15 +36,15 @@ class MathUtils(object):
         return gcd, scalar_1, scalar_2
 
     def gcd(self, num1, num2):
-        ''' Get the greatest common divisor of num1 and num2'''
+        """ Get the greatest common divisor of num1 and num2"""
         return self._extended_gcd(num1, num2)[0]
 
     def inverse(self, num, modulo):
-        ''' Find the modular inverse of num '''
+        """ Find the modular inverse of num """
         return ((self._extended_gcd(num, modulo))[1] % modulo)
     
     def _next_power_of_two(self, num):
-        ''' get the next power of 2 of a number '''
+        """ get the next power of 2 of a number """
         if num == 0:
             return 1
         if num == 2 ** (num.bit_length() - 1):
@@ -49,16 +52,16 @@ class MathUtils(object):
         return 2 ** num.bit_length()
 
     def _pad_array(self, array, padding_size):
-        ''' pad array with padding_size zeros '''
+        """ pad array with padding_size zeros """
         return np.append(array, np.zeros(padding_size))
     
     def _remove_padding(self, array):
-        ''' remove zero padding from the end of the array '''
+        """ remove zero padding from the end of the array """
         padding_start_index = (np.nonzero(array)[0])[-1] + 1
         return array[:padding_start_index]
         
     def _fast_DFT(self, sequence, w_n=None):
-        ''' compute the discrete fourier transform of the given sequence '''
+        """ compute the discrete fourier transform of the given sequence """
         if sequence.size == 1:
             return np.array([sequence[0]], dtype=np.cdouble)
         padding_size = self._next_power_of_two(sequence.size) - sequence.size
@@ -77,12 +80,12 @@ class MathUtils(object):
         return transform
 
     def _fast_inverse_DFT(self, sequence):
-        ''' compute the inverse discrete fourier transform of the given sequence '''
+        """ compute the inverse discrete fourier transform of the given sequence """
         N = sequence.size
         return self._fast_DFT(sequence, w_n=exp(-2j*pi/N)) / N
 
     def _fast_polynomials_multiplication(self, poly_1, poly_2):
-        ''' compute the coefficients of the product of the given polynomials '''
+        """ compute the coefficients of the product of the given polynomials """
         poly_1_padded = self._pad_array(poly_1, poly_2.size - 1)
         poly_1_FFT = self._fast_DFT(poly_1_padded)
         poly_2_padded = self._pad_array(poly_2, poly_1.size - 1)
@@ -94,8 +97,10 @@ class MathUtils(object):
         return self._remove_padding(mul)
 
     def polynomial_coefficients_from_roots(self, roots):
-        ''' compute the coefficients of the monic polynomial that has the specified roots '''
+        """ compute the coefficients of the monic polynomial that has the specified roots """
         N = roots.size
+        if N == 0:
+            return np.array([1])
         if N == 1:
             return np.array([-roots[0], 1], dtype=int)
         first_roots = roots[0:N//2]
@@ -104,16 +109,16 @@ class MathUtils(object):
         poly_2 = self.polynomial_coefficients_from_roots(last_roots)
         return self._fast_polynomials_multiplication(poly_1, poly_2)
 
-class PrimeGenerator(object):
+class PrimeGenerator:
 
     def __init__(self, num_of_bits, confidence):
-        ''' generate num_of_bits bits number which is a prime with high probability \
-        failure probabilty upper bound exponentialy decreases as confidence increases '''
+        """ generate num_of_bits bits number which is a prime with high probability \
+        failure probabilty upper bound exponentialy decreases as confidence increases """
         self.num_of_bits = num_of_bits
         self.confidence = confidence
 
     def get_prime(self):
-        ''' generate the prime '''
+        """ generate the prime """
         is_prime = False
         prime_candidate = 0
         while not is_prime:
@@ -124,14 +129,14 @@ class PrimeGenerator(object):
         return prime_candidate
 
     def _prime_sieving(self, number):
-        ''' Check that the number does not divide by any small prime '''
+        """ Check that the number does not divide by any small prime """
         for p in small_primes.primes:
             if number % p == 0:
                 return False
         return True
             
     def _primality_check(self, number):
-        ''' Miller-Rabin primality test implementation '''
+        """ Miller-Rabin primality test implementation """
         d = number - 1 # factorize number as n = (2^r)*d + 1
         r = 0
         while(d % 2 == 0):
@@ -152,20 +157,20 @@ class PrimeGenerator(object):
                 return False
         return True
 
-class Ciphertext(object):
+class Ciphertext:
 
     def __init__(self, ciphertext, modulo):
         self.ciphertext = ciphertext
         self.modulo = modulo
 
     def __add__(self, other):
-        ''' Homomorphic encryption for the addition of the plaintexts '''
+        """ Homomorphic encryption for the addition of the plaintexts """
         if other.modulo != self.modulo:
             raise("Error: ciphertext modulo mismatch.")
         return Ciphertext((self.ciphertext * other.ciphertext) % (self.modulo ** 2), self.modulo)
 
     def __mul__(self, num):
-        ''' Homomorphic encryption for the multiplication by scalar of the plaintext '''
+        """ Homomorphic encryption for the multiplication by scalar of the plaintext """
         effective_cipher = self.ciphertext
         if num < 0:
             effective_cipher = MathUtils().inverse(self.ciphertext, self.modulo ** 2)
@@ -175,22 +180,24 @@ class Ciphertext(object):
     def __str__(self):
         return str(self.ciphertext)
 
-class EncryptionScheme(object):
+class EncryptionScheme:
 
     def __init__(self):
         self.p = None
         self.q = None
         self.public_key = None # N = pq
         self.secret_key = None # phi(N) = (p-1)(q-1)
+        self.N_squared = None
 
-    def generate(self, security_param=2048, prime_confidence=100):
+    def generate(self, security_param=128, prime_confidence=100):
         self.p = PrimeGenerator(security_param, prime_confidence).get_prime()
         self.q = PrimeGenerator(security_param, prime_confidence).get_prime()
         self.public_key = self.p * self.q
+        self.N_squared = self.public_key ** 2
         self.secret_key = self.public_key - self.p - self.q + 1 # (p-1)(q-1) = pq - p - q + 1
 
     def to_file(self, file_path, include_secret_key=False):
-        ''' Save the scheme to a .npy file '''
+        """ Save the scheme to a .npy file """
         if not file_path.endswith('.npy'):
             raise('Error: file extension has to be ".npy"')
         values = np.array([self.public_key], dtype=object)
@@ -199,7 +206,7 @@ class EncryptionScheme(object):
         np.save(file_path, values, allow_pickle=True)
 
     def from_file(self, file_path):
-        ''' Load the scheme from a .npy file '''
+        """ Load the scheme from a .npy file """
         if not file_path.endswith('.npy'):
             raise('Error: file extension has to be ".npy"')
         try:
@@ -210,48 +217,87 @@ class EncryptionScheme(object):
             self.p, self.q, self.public_key, self.secret_key = tuple(scheme_data)
         except:
             self.public_key = scheme_data[0]
+        self.N_squared = self.public_key ** 2
 
     def encrypt_single_message(self, plaintext):
-        ''' Encrypts single numeric plaintext '''
+        """ Encrypts single numeric plaintext """
         if not (type(plaintext) is int):
             raise "Error: plaintext has to be of int type"
         r = 0 
         N = self.public_key
-        N_squared = N ** 2
         while MathUtils().gcd(r, self.public_key) != 1:
             r = random.randint(1, N - 1) # Assure that r in Zn*
-        cipher_1 = pow(1 + N, plaintext, N_squared) #(1+N)^m mod N^2
-        cipher_2 = pow(r, N, N_squared) #r^N mod N^2
-        final_cipher = (cipher_1 * cipher_2) % N_squared
-        return  Ciphertext(final_cipher, N)
+        cipher_1 = (1 + plaintext * N) % self.N_squared #(1+N)^m mod N^2 = (1+mN) mod N^2
+        cipher_2 = pow(r, N, self.N_squared) #r^N mod N^2
+        final_cipher = (cipher_1 * cipher_2) % self.N_squared
+        return Ciphertext(final_cipher, N)
 
     def decrypt_single_ciphertext(self, ciphertext):
-        ''' Decrypts single ciphertext of Ciphertext type'''
+        """ Decrypts single ciphertext of Ciphertext type """
         if not (type(ciphertext) is Ciphertext):
             raise "Error: ciphertext has to be of Ciphertext type"
         N = self.public_key
-        N_squared = N ** 2
         if self.secret_key is None:
             raise('Error: secret key was not found.')
         cipher = ciphertext.ciphertext
-        c_hat = pow(cipher, self.secret_key, N_squared) # c^phi(N) mod N^2
+        c_hat = pow(cipher, self.secret_key, self.N_squared) # c^phi(N) mod N^2
         m_hat = (c_hat - 1) // N
-        return (m_hat * MathUtils().inverse(self.secret_key, N_squared)) % N    
+        return (m_hat * MathUtils().inverse(self.secret_key, self.N_squared)) % N    
         
     def encode_message(self, message):
-        ''' Outputs ASCII codes of message chars'''
+        """ Outputs ASCII codes of message chars """
         return np.array([ord(char) for char in message], dtype=int)
 
     def decode_message(self, encoded_message):
-        ''' Outputs decoded message from ASCII array'''
+        """ Outputs decoded message from ASCII array"""
         return ''.join(chr(code) for code in encoded_message)
 
     def encrypt_encoded_message(self, encoded_message_vector):
-        ''' Outputs the encryption of a whole encoded message '''
-        ciphertext_vector = np.array([self.encrypt_single_message(int(message)) for message in encoded_message_vector])            
+        """ Outputs the encryption of a whole encoded message """
+        ciphertext_vector = np.array([self.encrypt_single_message(int(message)) for message in tqdm.tqdm(np.nditer(encoded_message_vector))], dtype=Ciphertext)
+        ciphertext_vector = ciphertext_vector.reshape(encoded_message_vector.shape)           
         return ciphertext_vector
 
     def decrypt_to_encoded_message(self, ciphertext_vector):
-        ''' Decrypts a whole ciphertext to the encoded plaintext'''
+        """ Decrypts a whole ciphertext to the encoded plaintext """
         encoded_plaintext_vector = np.array([self.decrypt_single_ciphertext(ciphertext) for ciphertext in ciphertext_vector])
+        encoded_plaintext_vector = encoded_plaintext_vector.reshape(ciphertext_vector.shape)
         return encoded_plaintext_vector
+
+class Hash:
+    """ pairwise independent hash family implementation """
+    
+    def __init__(self):
+        """ Initialize """
+        self.p = None
+        self.a, self.c = None, None
+        self.b, self.d = None, None
+
+    def generate(self, prime):
+        """ Generate hash family parameters with respect to the prime """
+        self.p = prime
+        self.a, self.c = random.randint(1, self.p - 1), random.randint(1, self.p - 1)
+        self.b, self.d = random.randint(0, self.p - 1), random.randint(0, self.p - 1)
+
+    def hash(self, x):
+        """ Compute the hash of the specified integer """
+        hash_1 = (self.a * x + self.b) % self.p
+        hash_2 = (self.c * x + self.d) % self.p
+        return hash_1, hash_2
+
+    def to_file(self, file_path):
+        """ Save hash function parameters to file """
+        if not file_path.endswith('.npy'):
+            raise('Error: file extension has to be ".npy"')
+        params = np.array([self.p, self.a, self.b, self.c, self.d])
+        np.save(file_path, params, allow_pickle=True)
+
+    def from_file(self, file_path):
+        """ Load hash parameters from a .npy file """
+        if not file_path.endswith('.npy'):
+            raise('Error: file extension has to be ".npy"')
+        try:
+            params = np.load(file_path, allow_pickle=True)
+        except:
+            raise('Error: failed to open the scheme file.')
+        self.p, self.a, self.b, self.c, self.d = tuple(params)
